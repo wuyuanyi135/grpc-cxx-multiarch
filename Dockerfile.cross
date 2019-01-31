@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM wuyuanyi/grpc-cxx:source as source
+FROM wuyuanyi/grpc-cxx:latest-source as source
 
-FROM __BASEIMAGE_ARCH__/ubuntu:18.04
+FROM __BASEIMAGE_ARCH__/ubuntu:18.04 as full
 __CROSS_COPY qemu_arch/qemu-__QEMU_ARCH__-static /usr/bin/
 
 RUN apt-get update && apt-get install -y \
@@ -29,7 +29,12 @@ RUN cd /var/local/git/grpc && \
     echo "--- installing protobuf ---" && \
     cd third_party/protobuf && \
     ./autogen.sh && ./configure --enable-shared && \
-    make -j$(nproc) && make -j$(nproc) check && make install && make clean && ldconfig && \
+    make -j$(nproc) && make install DESTDIR=/grpc && make clean && ldconfig && \
     echo "--- installing grpc ---" && \
     cd /var/local/git/grpc && \
-    make -j$(nproc) && make install DESTDIR=/grpc && make clean && ldconfig
+    make -j$(nproc) && make install prefix=/grpc/usr/local && make clean && ldconfig
+
+
+
+FROM scratch
+COPY --from=full /grpc /grpc
