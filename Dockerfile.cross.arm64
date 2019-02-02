@@ -1,0 +1,37 @@
+FROM wuyuanyi/grpc-cxx:latest-source as source
+FROM wuyuanyi/grpc-cxx:latest-amd64 as built
+
+FROM wuyuanyi/docker-cross-build:linux-arm64-latest as full
+
+COPY --from=built /grpc /
+COPY --from=source /var/local/git/grpc /var/local/git/grpc
+# build cross protoc
+RUN export QEMU_SET_ENV=LD_LIBRARY_PATH=/grpc/usr/local/lib:/usr/lib:/usr/aarch64-linux-gnu && \
+    apt update && apt install -y zlib1g-dev:arm64 && apt clean && \
+    cd /var/local/git/grpc && \
+    echo "--- installing cross protobuf ---" && \
+     cd third_party/protobuf && \
+     ./autogen.sh && ./configure --enable-shared --host=${CROSS_TRIPLE}&& \
+     make -j$(nproc) && make install DESTDIR=/grpc && ldconfig && \
+    echo "--- installing grpc ---" && \
+    cd /var/local/git/grpc && \
+    export CC=`which ${CROSS_TRIPLE}-gcc` && \
+    export LD=`which ${CROSS_TRIPLE}-gcc` && \
+    export CXX=`which ${CROSS_TRIPLE}-g++` && \
+    export LDXX=`which ${CROSS_TRIPLE}-g++` && \
+    export AR=`which ${CROSS_TRIPLE}-ar` && \
+    export STRIP=`which ${CROSS_TRIPLE}-strip` && \
+    export PROTOBUF_CONFIG_OPTS="--host=${CROSS_TRIPLE} --with-protoc=`which protoc`" && \
+    export HAS_PKG_CONFIG=true  && \
+    export GRPC_CROSS_COMPILE=true && \
+    export GRPC_CROSS_LDOPTS="-L/grpc/usr/local/lib -L/usr/aarch64-linux-gnu/lib -L/usr/lib -L/usr/local/lib" && \
+    export GRPC_CROSS_AROPTS="rcs --target=elf64-littleaarch64" && \
+    make grpc_cpp_plugin grpc_csharp_plugin grpc_node_plugin grpc_objective_c_plugin grpc_php_plugin grpc_python_plugin grpc_ruby_plugin  all \
+        prefix=/grpc/usr/local \
+        -j$(nproc) && \      
+    make install \
+        prefix=/grpc/usr/local \
+        -j$(nproc) 
+
+FROM scratch
+COPY --from=full /grpc /grpc
